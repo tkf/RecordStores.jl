@@ -5,6 +5,7 @@ export recordstore
 import BSON
 import ZipFile
 using BangBang: push!!
+using Base: open_flags
 
 recordstore(path::AbstractString) = RecordStore(path)
 
@@ -12,17 +13,20 @@ struct RecordStore
     path::String
 end
 
-function Base.open(store::RecordStore, mode::AbstractString)
-    if mode == "w"
-        return RecordWriter(store)
-    elseif mode == "r"
-        return RecordReader(store)
-    else
-        throw(ArgumentError("Unsupported mode: $mode"))
-    end
+function Base.open(store::RecordStore; read=nothing, write=nothing)
+    flags = open_flags(read=read, write=write)
+    flags.write && return RecordWriter(store)
+    flags.read && return RecordReader(store)
+    throw(ArgumentError("Unsupported flags: $flags"))
 end
 
-Base.read(store::RecordStore) = open(read, store, "r")
+function Base.open(store::RecordStore, mode::AbstractString)
+    mode == "w" && return open(store, write=true)
+    mode == "r" && return open(store, read=true)
+    throw(ArgumentError("Unsupported mode: $mode"))
+end
+
+Base.read(store::RecordStore) = open(read, store)
 
 struct RecordWriter
     path::String
