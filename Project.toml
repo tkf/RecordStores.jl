@@ -3,6 +3,11 @@ uuid = "22026b00-6f12-4063-8af3-959e2611bf67"
 authors = ["Takafumi Arakaki <aka.tkf@gmail.com>"]
 version = "0.1.0"
 
+[deps]
+BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
+BangBang = "198e06fe-97b7-11e9-32a5-e1d131e6ad66"
+ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
+
 [compat]
 julia = "1.2"
 
