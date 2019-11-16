@@ -119,10 +119,20 @@ RecordReader(store::RecordStore) = RecordReader(store.path, store.reader(store.p
 
 Base.close(r::RecordReader) = close(r.reader)
 
+fileid(x) = parse(Int, chop(filename(x); tail = length(".bson")))
+sortedfiles(r::RecordReader) = sort!(collect(files(r.reader)); by = fileid)
+
 function Base.read(r::RecordReader)
-    id(x) = parse(Int, chop(filename(x); tail = length(".bson")))
-    fs = sort!(collect(files(r.reader)); by = id)
-    return mapfoldl(BSON.load, push!!, fs; init = Union{}[])
+    return mapfoldl(BSON.load, push!!, sortedfiles(r); init = Union{}[])
 end
+
+Base.iterate(r::RecordReader) = iterate(r, (sortedfiles(r), 1))
+function Base.iterate(r::RecordReader, (files, i))
+    i > length(files) && return nothing
+    return (BSON.load(files[i]), (files, i + 1))
+end
+
+Base.IteratorSize(::Type{<:RecordReader}) = Base.SizeUnknown()
+Base.IteratorEltype(::Type{<:RecordReader}) = Base.EltypeUnknown()
 
 end # module

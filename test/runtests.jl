@@ -17,6 +17,7 @@ using Test
             end
 
             @test read(store) == records
+            @test open(collect, store) == records
         end
     end
 end
