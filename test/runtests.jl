@@ -7,14 +7,23 @@ using Test
         Dict(:c => [1.0, 2.0, 3im]),
     ]
 
-    mktemp() do path, io
-        store = recordstore(path)
-        open(store, "w") do w
-            for r in records
-                write(w, r)
+    @testset for archiver in [:zip, :dir]
+        mktempdir() do dir
+            store = recordstore(joinpath(dir, "store"); archiver = archiver)
+            open(store, "w") do w
+                for r in records
+                    write(w, r)
+                end
             end
-        end
 
-        @test read(store) == records
+            @test read(store) == records
+        end
+    end
+end
+
+@testset "guess_archiver" begin
+    if Sys.isunix()
+        @test recordstore("/store.zip").writer == RecordStores.ZipFile.Writer
+        @test recordstore("/store/").writer == RecordStores.DirWriter
     end
 end

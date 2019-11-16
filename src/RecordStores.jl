@@ -7,11 +7,65 @@ import ZipFile
 using BangBang: push!!
 using Base: open_flags
 
-recordstore(path::AbstractString) = RecordStore(path)
+addfile(writer::ZipFile.Writer, name) = ZipFile.addfile(writer, name)
+files(x) = x.files
+filename(x) = x.name
+
+struct DirWriter
+    path::String
+
+    function DirWriter(path)
+        mkdir(path)
+        return new(path)
+    end
+end
+
+addfile(writer::DirWriter, name) = joinpath(writer.path, name)
+
+Base.close(::DirWriter) = nothing
+Base.flush(::DirWriter) = nothing
+
+struct DirReader
+    path::String
+end
+
+files(reader::DirReader) = joinpath.(reader.path, readdir(reader.path))
+filename(fullpath::AbstractString) = basename(fullpath)
+Base.close(::DirReader) = nothing
+
+const _archivers = (
+    zip = (writer = ZipFile.Writer, reader = ZipFile.Reader),
+    dir = (writer = DirWriter, reader = DirReader),
+)
+
+function guess_archiver(path)
+    if endswith(path, ".zip")
+        return :zip
+    elseif endswith(path, Base.Filesystem.path_separator) || isdir(path)
+        return :dir
+    end
+    error(
+        "Cannot guess `archiver` for path `$path`.",
+        " Please specify `archiver` keyword argument.",
+    )
+end
+
+"""
+    recordstore(path; archiver) -> store
+
+# Keyword Arguments
+- `archiver ∈ (:zip, :dir)`
+"""
+recordstore(path::AbstractString; archiver::Symbol = guess_archiver(path)) =
+    RecordStore(path; pairs(_archivers[archiver])...)
 
 struct RecordStore
     path::String
+    writer
+    reader
 end
+
+RecordStore(path; writer, reader) = RecordStore(path, writer, reader)
 
 function Base.open(store::RecordStore; read=nothing, write=nothing)
     flags = open_flags(read=read, write=write)
@@ -34,20 +88,23 @@ struct RecordWriter
     counter::typeof(Ref(0))
 end
 
-RecordWriter(path::AbstractString) =
-    RecordWriter(path, ZipFile.Writer(path), Ref(0))
-RecordWriter(store::RecordStore) = RecordWriter(store.path)
+RecordWriter(path::AbstractString, writer) = RecordWriter(path, writer, Ref(0))
+RecordWriter(store::RecordStore) = RecordWriter(store.path, store.writer(store.path))
 
 Base.close(w::RecordWriter) = close(w.writer)
+Base.flush(w::RecordWriter) = flush(w.writer)
+
+maybeclose(_) = nothing
+maybeclose(io::IO) = close(io)
 
 function Base.write(w::RecordWriter, obj)
     i = w.counter[] += 1
-    f = ZipFile.addfile(w.writer, "$i.bson")
+    f = addfile(w.writer, "$i.bson")
     obj = deepcopy(obj)  # https://github.com/MikeInnes/BSON.jl/issues/26
     try
         BSON.bson(f, obj)
     finally
-        close(f)  # flush
+        maybeclose(f)  # flush
     end
     return w
 end
@@ -57,15 +114,15 @@ struct RecordReader
     reader
 end
 
-RecordReader(path::AbstractString) = RecordReader(path, ZipFile.Reader(path))
-RecordReader(store::RecordStore) = RecordReader(store.path)
+RecordReader(path::AbstractString, reader) = RecordReader(path, reader)
+RecordReader(store::RecordStore) = RecordReader(store.path, store.reader(store.path))
 
 Base.close(r::RecordReader) = close(r.reader)
 
 function Base.read(r::RecordReader)
-    id(x) = parse(Int, chop(x.name; tail=length(".bson")))
-    files = sort!(collect(r.reader.files); by=id)
-    return mapfoldl(BSON.load, push!!, files; init=Union{}[])
+    id(x) = parse(Int, chop(filename(x); tail = length(".bson")))
+    fs = sort!(collect(files(r.reader)); by = id)
+    return mapfoldl(BSON.load, push!!, fs; init = Union{}[])
 end
 
 end # module
